@@ -76,10 +76,6 @@ def giou(box1: torch.Tensor, box2: torch.Tensor) -> torch.Tensor:
     # 并集面积
     area1 = (box1[..., 2] - box1[..., 0]) * (box1[..., 3] - box1[..., 1])
     area2 = (box2[..., 2] - box2[..., 0]) * (box2[..., 3] - box2[..., 1])
-    union_area = area1 + area2 - (torch.clamp(C_x2 - C_x1, min=0) * torch.clamp(C_y2 - C_y1, min=0)) + (  # 用 inter 简化
-        # 直接计算 union
-    )
-    # 更正: 用已有的 iou 计算 GIoU
     # GIoU 的惩罚项: (C_area - union_area) / C_area
     inter_x1 = torch.max(box1[..., 0], box2[..., 0])
     inter_y1 = torch.max(box1[..., 1], box2[..., 1])
@@ -199,7 +195,8 @@ def create_test_cases():
         ("完全分离", np.array([0, 0, 2, 2]), np.array([4, 4, 6, 6])),
         ("部分重叠", np.array([0, 0, 3, 3]), np.array([2, 2, 5, 5])),
         ("完全包含", np.array([0, 0, 5, 5]), np.array([1, 1, 4, 4])),
-        ("中心重合但大小不同", np.array([0, 0, 4, 4]), np.array([1, 1, 3, 3])),
+        ("中心重合,大小不同(同比例)", np.array([0, 0, 4, 4]), np.array([1, 1, 3, 3])),
+        ("中心重合,长宽比不同", np.array([0, 0, 6, 2]), np.array([2, 0, 4, 4])),  # w/h=3 vs w/h=0.5
         ("边缘接触", np.array([0, 0, 2, 2]), np.array([2, 0, 4, 2])),
     ]
     return cases
@@ -337,22 +334,45 @@ if __name__ == "__main__":
     cases = create_test_cases()
     compare_all_iou(cases)
 
-    # 2. 梯度下降回归模拟
-    print("\n2. CIoU Loss 梯度下降回归模拟")
+    # 1.5 验证"中心重合,同比例"场景仍有梯度
+    print("\n1.5 验证'中心重合,大小相同比例'场景是否退化")
     print("-" * 40)
-    target = np.array([2.0, 2.0, 5.0, 5.0])
-    init = np.array([0.0, 0.0, 3.0, 3.0])
-
-    print("Target box:", target)
-    print("Initial box:", init)
+    box1 = torch.tensor([0.0, 0.0, 4.0, 4.0], requires_grad=True)  # 大框
+    box2 = torch.tensor([1.0, 1.0, 3.0, 3.0])  # 小框, 中心重合
+    # 检验 CIoU 对小框右边界 x2 的梯度
+    loss = ciou_loss(box1, box2)
+    loss.backward()
+    print(f"大框 [0,0,4,4] vs 小框 [1,1,3,3] (中心重合,同比例)")
+    print(f"  CIoU Loss = {loss.item():.6f}")
+    print(f"  ∂L/∂x2(大框右边界) = {box1.grad[2].item():.6f}  ← 梯度≠0, 模型知道该放大还是缩小")
+    # 方向: 负梯度表示缩小 x2(框向左缩), 正梯度表示放大 x2(框向右扩)
+    if box1.grad[2].item() < 0:
+        print(f"  → 梯度方向: 缩小大框 (右边界左移), 与目标框更接近")
+    else:
+        print(f"  → 梯度方向: 放大小框或缩小大框, 具体取决于两框的相对位置")
     print()
 
-    history, loss_values = simulate_regression(
-        target, init, lr=0.1, steps=100, loss_fn="ciou"
-    )
+    # 2. 梯度下降回归模拟 - 对比 DIoU vs CIoU
+    print("\n2. 梯度下降回归模拟: DIoU vs CIoU 对比")
+    print("-" * 40)
+    print("场景: 初始框与目标框中心重合但长宽比不同, 检验 CIoU 的长宽比惩罚效果")
+    print()
+    target = np.array([0.0, 0.0, 6.0, 2.0])  # 宽框 (w/h=3)
+    init = np.array([0.0, 0.0, 2.0, 6.0])    # 高框 (w/h=1/3), 中心重合
+
+    print(f"{'Target box:':20s} {target}")
+    print(f"{'Initial box:':20s} {init}")
+    print(f"{'中心点:':20s} 均为 {(target[0]+target[2])/2:.1f}, {(target[1]+target[3])/2:.1f}")
+    print()
+
+    for loss_name in ["diou", "ciou"]:
+        print(f"\n--- {loss_name.upper()} Loss 回归 ---")
+        history, loss_values = simulate_regression(
+            target, init, lr=0.05, steps=100, loss_fn=loss_name
+        )
+        print(f"{'初始损失:':15s} {loss_values[0]:.6f}")
+        print(f"{'最终损失:':15s} {loss_values[-1]:.6f}")
+        print(f"{'最终预测框:':15s} {history[-1]}")
+        print(f"{'目标真值框:':15s} {target}")
 
     print("\n回归完成！")
-    print(f"初始损失: {loss_values[0]:.6f}")
-    print(f"最终损失: {loss_values[-1]:.6f}")
-    print(f"最终预测框: {history[-1]}")
-    print(f"目标真值框: {target}")
