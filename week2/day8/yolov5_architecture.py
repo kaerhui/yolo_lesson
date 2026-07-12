@@ -51,7 +51,7 @@ def test_focus():
     out = focus(x)
     print(f"[Focus] Input: {tuple(x.shape)} → Output: {tuple(out.shape)}")
     assert out.shape[-1] == 320, "Focus should halve spatial dims"
-    print("  ✓ Focus 正确: 空间减半, 通道从 3→64")
+    print("  [OK] Focus 正确: 空间减半, 通道从 3->64")
 
 
 # ============================================================
@@ -110,9 +110,9 @@ def test_c3():
     loss.backward()
     grad_norm_cv1 = c3.cv1.weight.grad.norm().item()
     grad_norm_cv2 = c3.cv2.weight.grad.norm().item()
-    print(f"  ✓ C3 梯度流: cv1 (主路) grad norm = {grad_norm_cv1:.4f}")
-    print(f"  ✓ C3 梯度流: cv2 (捷径) grad norm = {grad_norm_cv2:.4f}")
-    print(f"  ✓ 梯度同时流经两路, 但主路承担更多变换")
+    print(f"  [OK] C3 梯度流: cv1 (主路) grad norm = {grad_norm_cv1:.4f}")
+    print(f"  [OK] C3 梯度流: cv2 (捷径) grad norm = {grad_norm_cv2:.4f}")
+    print(f"  [OK] 梯度同时流经两路, 但主路承担更多变换")
 
 
 # ============================================================
@@ -154,7 +154,7 @@ def test_sppf():
     out = sppf(x)
     print(f"[SPPF] Input: {tuple(x.shape)} → Output: {tuple(out.shape)}")
     assert out.shape == x.shape, "SPPF should preserve spatial & channel dims"
-    print("  ✓ SPPF 正确: 无尺寸变化, 融合多尺度池化特征")
+    print("  [OK] SPPF 正确: 无尺寸变化, 融合多尺度池化特征")
 
 
 # ============================================================
@@ -250,11 +250,11 @@ def test_self_attention():
     out, attn = sa(x)
     print(f"\n[SelfAttention] Input: [1, 3, 8] → Output: {tuple(out.shape)}")
     print(f"  Attention matrix: {tuple(attn.shape)}")
-    print(f"  Attention weights (row sum to 1):\n{attn[0].detach():.4f}")
+    print(f"  Attention weights (row sum to 1):\n{attn[0].detach().numpy().round(4)}")
 
     # 手算验证: 第 0 个 token 的注意力权重和应为 1
     row_sum = attn[0, 0].sum().item()
-    print(f"  ✓ Row 0 sum = {row_sum:.4f} (should be 1.0)")
+    print(f"  [OK] Row 0 sum = {row_sum:.4f} (should be 1.0)")
 
 
 # ============================================================
@@ -302,7 +302,7 @@ def test_cnn_with_sa():
     print(f"\n[CNN+SA] Input: [2, 3, 64, 64] → Logits: {tuple(logits.shape)}")
     print(f"  Attention map: {tuple(attn.shape)}")
     # 检查注意力是否覆盖全图 (64 个位置)
-    print(f"  ✓ 注意力覆盖所有 {attn.shape[-1]} 个空间位置, 实现全局建模")
+    print(f"  [OK] 注意力覆盖所有 {attn.shape[-1]} 个空间位置, 实现全局建模")
 
 
 # ============================================================
